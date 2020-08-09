@@ -1,133 +1,143 @@
 #!/usr/bin/env python3
+# -*- coding: utf-8 -*-
 # vim: nospell ts=4 expandtab
 
 from __future__ import annotations
 
-from typing import List
+from typing import Callable, Dict, List, Optional, Tuple, Union
 
+import base64
 import cgi
-import glob
-import http.server
-import json
 import os
-import random
-import shutil
 import ssl
 import urllib.parse
 
-import importer
-import common
+import bcrypt  # type: ignore
+
+from http.server import ThreadingHTTPServer
+from http.server import BaseHTTPRequestHandler as Handler
+
+from handlers import (
+    download_user_empires,
+    page_file,
+    page_ajax_list,
+    process_upload,
+    send_username,
+)
+
+HandlerWithNoArg = Callable[[Handler], None]
+HandlerWithOneArg = Callable[[Handler, str], None]
+HandlerWithTwoArgs = Callable[[Handler, str, str], None]
+HandlerWithThreeArgs = Callable[[Handler, str, str, str], None]
+
+Handlers = Union[
+    HandlerWithNoArg, HandlerWithOneArg, HandlerWithTwoArgs, HandlerWithThreeArgs
+]
+
+RouteWithNoArg = Tuple[HandlerWithNoArg, bool]
+RouteWithOneArg = Tuple[HandlerWithOneArg, bool, str]
+RouteWithTwoArg = Tuple[Union[HandlerWithTwoArgs, HandlerWithThreeArgs], bool, str, str]
+RouteWithThreeArg = Tuple[
+    Union[HandlerWithTwoArgs, HandlerWithThreeArgs], bool, str, str, str
+]
+
+Route = Union[RouteWithNoArg, RouteWithOneArg, RouteWithTwoArg, RouteWithThreeArg]
+
+ROUTING: Dict[str, Route] = {
+    "/": (page_file, False, "html/welcome.html", "text/html"),
+    "/upload": (page_file, True, "html/upload.html", "text/html"),
+    "/download": (page_file, False, "html/download.html", "text/html"),
+    "/generate": (download_user_empires, True),
+    "/username": (send_username, True, "$user"),
+    "/sources-list": (page_file, True, "sources.json", "application_json"),
+    "/common.js": (page_file, False, "html/upload.js", "application/javascript"),
+    "/upload.js": (page_file, False, "html/upload.js", "application/javascript"),
+    "/sources.js": (page_file, False, "html/sources.js", "application/javascript"),
+    "/style.css": (page_file, False, "html/style.css", "text/css"),
+    "/menu.png": (page_file, False, "images/menu.png", "image/png"),
+}
+
+PREFIX_ROUTING: Dict[str, Route] = {
+    "/ethic/": (page_file, False, "2", "image/png", "images/"),
+    "/event-": (page_file, False, "1", "image/jpg", "images/"),
+    "/ajax/": (page_ajax_list, True, "2"),
+}
 
 
-class StellarisHandler(http.server.BaseHTTPRequestHandler):
+class StellarisHandler(Handler):
     server_version = "StellarisEmpireSharer"
+    protocol_version = "HTTP/1.1"
 
-    def do_GET(self: StellarisHandler):
+    def do_GET(self: StellarisHandler) -> None:
         """Serve a GET request."""
 
-        path = urllib.parse.urlparse(self.path).path
+        # Get the actual request path, excluding the query string.
+        path: str = urllib.parse.urlparse(self.path).path
 
-        if path == "/":
-            self.page_file("html/upload.html", "text/html")
-        elif path == "/upload.js":
-            self.page_file("html/upload.js", "application/javascript")
-        elif path == "/generate":
-            self.download_user_empires()
-        elif path == "/ajax-approved":
-            self.page_ajax_list("approved")
-        elif path == "/ajax-pending":
-            self.page_ajax_list("pending")
-        else:
-            self.send_error(404)
+        # See if we have a route to the current request
+        route: Optional[Route] = self.route(path)
 
-    def page_file(self: StellarisHandler, filename: str, mime: str):
-        with open(filename, "rb") as contents:
-            stat = os.fstat(contents.fileno())
-
-            self.send_response(200)
-            self.send_header("Content-type", mime)
-            self.send_header("Content-Length", str(stat.st_size))
-            self.end_headers()
-
-            shutil.copyfileobj(contents, self.wfile)
-
-    def page_ajax_list(self: StellarisHandler, folder: str):
-        files = glob.glob(f"{folder}/**/*.txt")
-        output = []
-
-        for filename in files:
-            with open(filename, "r") as handle:
-                obj = common.parse(handle)
-
-            if isinstance(obj, list) and len(obj) == 1:
-                if isinstance(obj[0], tuple):
-                    obj = obj[0][1]
-
-            name = importer.get_value(obj, "key")
-            author = importer.get_value(obj, "author")
-            ethics = importer.get_values(obj, "ethic")
-
-            output.append({"author": author, "name": name, "ethics": ethics})
-
-        jsondata = json.dumps(output).encode("utf-8")
-
-        self.send_response(200)
-        self.send_header("Content-Type", "text/json")
-        self.send_header("Content-Length", str(len(jsondata)))
-        self.end_headers()
-
-        self.wfile.write(jsondata)
-
-    def download_user_empires(self: StellarisHandler):
-        query = urllib.parse.urlparse(self.path).query
-        data = urllib.parse.parse_qs(query)
-
-        if "empire_count" not in data:
-            self.send_error(400)
+        if not route:
+            self.send_error(404, f"Path not found {path}")
             return
 
-        count: int = int(data["empire_count"][0])
-        unmod: bool = "include_unmoderated" in data
+        username: Optional[bytes] = None
+        handler: Handlers
+        need_auth: bool
+        params: List[str] = []
+        [handler, need_auth, *params] = route
 
-        files = glob.glob(f"approved/**/*.txt")
+        if need_auth:
+            # Get the currently logged in user.
+            username = self.auth()
 
-        if unmod:
-            files = files + glob.glob("pending/**/*.txt")
+            # A user must be logged in for everything other than the home page.
+            if not username and path != "/":
+                self.send_auth_challenge()
+                return
 
-        files = random.sample(files, min(count, len(files)))
-        length: int = 0
+        # Sub in path elements in params.
+        segments = path.split("/")
+        params = [segments[int(x)] if x.isnumeric() else x for x in params]
 
-        for filename in files:
-            stat = os.stat(filename)
-            length = length + stat.st_size
+        # Sub in username in params
+        user = username.decode("utf-8") if username else ""
+        params = [user if x == "$user" else x for x in params]
 
-        self.send_response(200)
-        self.send_header("Content-Type", "text/plain")
-        self.send_header(
-            "Content-Disposition", 'attachment; filename="user_empire_designs.txt"'
-        )
-        self.send_header("Content-Length", str(length))
-        self.end_headers()
+        # Call the current request handler.
+        handler(self, *params)
 
-        for filename in files:
-            with open(filename, "rb") as handle:
-                shutil.copyfileobj(handle, self.wfile)
+    def route(self: StellarisHandler, path: str) -> Optional[Route]:
+        if path in ROUTING:
+            return ROUTING[path]
 
-    def do_POST(self: StellarisHandler):
+        for prefix in PREFIX_ROUTING:
+            if path.startswith(prefix):
+                return PREFIX_ROUTING[prefix]
+
+        return None
+
+    def do_POST(self: StellarisHandler) -> None:
+        username = self.auth()
+
+        if not username:
+            self.send_auth_challenge()
+            return
+
         if self.path != "/do-upload":
-            self.send_error(405)
+            self.send_error(405, "Can not post to {self.path}")
             return
 
-        ctype = str(self.headers["content-type"]).strip()
+        content_type = str(self.headers["content-type"]).strip()
 
-        if ";" not in ctype:
-            self.send_error(415)
+        if ";" not in content_type:
+            self.send_error(415, f"Invalid Content-Type: {content_type}")
             return
 
-        [ctype, boundary] = ctype.split(";")
+        [content_type, boundary] = content_type.split(";")
 
-        if ctype.strip() != "multipart/form-data":
-            self.send_error(415)
+        if content_type.strip() != "multipart/form-data":
+            self.send_error(415, f"Invalid Content-Type: {content_type}")
             return
 
         bound_bytes: bytes = boundary.strip().replace("boundary=", "").encode("ascii")
@@ -139,69 +149,67 @@ class StellarisHandler(http.server.BaseHTTPRequestHandler):
             self.rfile, {"boundary": bound_bytes, "CONTENT-LENGTH": length_bytes}
         )
 
-        if "select" not in msg or "file" not in msg or "username" not in msg:
-            self.send_error(415)
-            return
+        process_upload(self, username.decode("utf-8"), msg)
 
-        self.process_upload(msg)
+    def auth(self) -> Optional[bytes]:
+        """Checks if a user is authorised"""
 
-    def process_upload(self: StellarisHandler, msg):
-        # Extract the username, create folders
-        username = msg["username"][0]
-        username = username.replace("/", "_")
-        username = username.replace(".", "_")
+        auth: bytes = self.headers["authorization"]
 
-        if not username:
-            self.send_error(415)
-            return
+        if not auth:
+            print("No auth header")
+            return None
 
-        for folder in ["approved", "pending"]:
-            if not os.path.exists(f"{folder}/{username}"):
-                os.mkdir(f"{folder}/{username}")
+        try:
+            auth = base64.b64decode(auth[6:])
+            [user, password] = auth.split(b":", 1)
+        except Exception as ex:
+            print("Invalid auth header " + str(ex))
+            return None
 
-        # Extract and load the user_empire_designs.txt data.
-        upload = msg["file"][0].decode("utf-8")
-        empires = importer.parse_user_empires(upload)
+        if not user or not password:
+            return None
 
-        # Get the list of empires we want to import
-        wanted: List[str] = [t.strip().strip('"') for t in msg["select"]]
+        # Open up the current user database.
+        with open("users.txt", "r+b") as user_file:
+            for line in user_file:
+                if line.startswith(b"#") or b":" not in line:
+                    continue
 
-        report: str = "Attempt Upload " + ", ".join(msg["select"]) + ".\n\n"
+                [file_user, hashed] = line.strip(b"\n").split(b":", 1)
 
-        for name, empire in empires:
-            if name not in wanted:
-                continue
+                if file_user == user.lower():
+                    return user if bcrypt.checkpw(password, hashed) else None
 
-            if not isinstance(empire, list):
-                continue
+            # If not matched, add a new user to the file.
+            hashed = bcrypt.hashpw(password, bcrypt.gensalt())
+            user_file.write(user.lower() + b":" + hashed + b"\n")
 
-            if not importer.is_valid_empire(empire):
-                report += f"{name} does not appear to be a valid empire?\n"
-                continue
+        return user
 
-            importer.add_value(empire, "author", username)
-            importer.store(empire, f"pending/{username}")
-            report += f"Stored {name}\n"
-
-        report_bytes: bytes = report.encode("utf-8")
-
-        self.send_response(201)
+    def send_auth_challenge(self) -> None:
+        self.send_response(401)
+        self.send_header(
+            "WWW-Authenticate",
+            'basic realm="Stellaris Empire Exchange -- Pick a username and password"'
+            + 'charset="utf-8"',
+        )
         self.send_header("Content-Type", "text/plain")
-        self.send_header("Content-Length", str(len(report_bytes)))
+        self.send_header("Content-Length", "5")
         self.end_headers()
 
-        self.wfile.write(report_bytes)
+        self.wfile.write(b"Hello")
 
 
-def main():
+def main() -> None:
     os.chdir(os.path.dirname(os.path.realpath(__file__)))
     os.chdir("..")
 
-    for folder in ["approved", "pending"]:
+    for folder in ["approved", "pending", "historical"]:
         if not os.path.exists(folder):
             os.mkdir(folder)
 
-    httpd = http.server.HTTPServer(("", 8000), StellarisHandler)
+    httpd = ThreadingHTTPServer(("", 8080), StellarisHandler)
     address = httpd.socket.getsockname()
     print(f"Serving HTTP on {address}…")
 

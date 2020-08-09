@@ -1,27 +1,26 @@
-'use strict';
+"use strict";
 
-import { elemGenerator } from 'https://javajawa.github.io/elems.js/elems.js';
+import { elemGenerator } from "https://javajawa.github.io/elems.js/elems.js";
 
-const upload = document.getElementById('upload');
-const list   = document.getElementById('list');
-const submit = document.getElementById('submit');
+const upload = document.getElementById("upload");
+const list = document.getElementById("list");
+const submit = document.getElementById("submit");
 const reader = new FileReader();
 
-const li     = elemGenerator('li');
-const label  = elemGenerator('label');
-const input  = elemGenerator('input');
+const input = elemGenerator("input");
+const label = elemGenerator("label");
+const li = elemGenerator("li");
 
-upload.addEventListener('change', e => reader.readAsText(upload.files[0]));
-list.addEventListener('change', e => {
+upload.addEventListener("change", () => reader.readAsText(upload.files[0]));
+list.addEventListener("change", () => {
 	submit.setAttribute("disabled", "");
-	list.querySelectorAll('input').forEach(i => {
-		i.checked && submit.removeAttribute("disabled")
+	list.querySelectorAll("input").forEach(i => {
+		i.checked && submit.removeAttribute("disabled");
 	});
 });
-reader.addEventListener('load', processEmpires);
+reader.addEventListener("load", processEmpires);
 
-function processEmpires()
-{
+function processEmpires() {
 	while (list.lastChild) {
 		list.removeChild(list.lastChild);
 	}
@@ -30,18 +29,18 @@ function processEmpires()
 	const data = reader.result;
 
 	// Offset where the current empire starts.
-	let start  = 0;
+	let start = 0;
 	// Offset we have read up to.
-	let offset = data.indexOf('{');
+	let offset = data.indexOf("{");
 	// The nesting level of `{}` we're at.
-	let depth  = 1;
+	let depth = 1;
 	// Where the next `{` and `}` are.
 	let nextOpen, nextClose;
 
 	while (true) {
 		// Find the next braces.
-		nextOpen  = data.indexOf('{', offset + 1);
-		nextClose = data.indexOf('}', offset + 1);
+		nextOpen = data.indexOf("{", offset + 1);
+		nextClose = data.indexOf("}", offset + 1);
 
 		// If no more braces, we're done
 		if (nextOpen === -1 && nextClose === -1) {
@@ -71,9 +70,9 @@ function processEmpires()
 			return;
 		}
 
-		start  = nextClose + 1;
+		start = nextClose + 1;
 		offset = nextOpen;
-		depth  = 1;
+		depth = 1;
 	}
 }
 
@@ -82,38 +81,25 @@ function processEmpire(text) {
 
 	let name = lines[0].trim();
 
-	while (name.endsWith('{') || name.endsWith('=')) {
-		name = name.substring(0, -1).trim();
+	while (name.endsWith("{") || name.endsWith("=")) {
+		name = name.substring(0, name.length - 1).trim();
 	}
 
 	let ethics = [];
 
-	lines.map(line => line.trim())
-		.filter(line => line.startsWith('ethic'))
-		.map(line => line.replace(/^ethic=\"/, ''))
-		.map(line => line.replace(/^ethic_/, ''))
-		.map(line => line.replace('_', ' '))
-		.map(line => line.replace(/"$/, ''))
-		.forEach(line => ethics.push(line))
-	;
+	lines
+		.map(line => line.trim())
+		.filter(line => line.startsWith("ethic"))
+		.map(line => line.replace(/^ethic="/, ""))
+		.map(line => line.replace(/^ethic_/, ""))
+		.map(line => line.replace("_", " "))
+		.map(line => line.replace(/"$/, ""))
+		.forEach(line => ethics.push(line));
 
-	list.appendChild(li(
-		input({id: name, type: "checkbox", name: "select", value: name}),
-		label({"for": name}, name + ' [' + ethics.join(", ") + ']')
-	));
+	list.appendChild(
+		li(
+			input({ id: name, type: "checkbox", name: "select", value: name }),
+			label({ for: name }, name + " [" + ethics.join(", ") + "]")
+		)
+	);
 }
-
-fetch('/ajax-approved').then(r => r.json())
-	.then(r => r.map(e => li(`${e.name} by ${e.author} [${e.ethics.join(", ")}]`)))
-	.then(r => {
-		const p = document.getElementById('approved');
-		r.forEach(e => p.appendChild(e))
-	}
-);
-fetch('/ajax-pending').then(r => r.json())
-	.then(r => r.map(e => li(`${e.name} by ${e.author} [${e.ethics.join(", ")}]`)))
-	.then(r => {
-		const p = document.getElementById('pending');
-		r.forEach(e => p.appendChild(e))
-	}
-);

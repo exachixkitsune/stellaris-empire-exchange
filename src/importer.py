@@ -1,31 +1,15 @@
 #!/usr/bin/python3
+# -*- coding: utf-8 -*-
 # vim: nospell ts=4 expandtab
 
 from __future__ import annotations
 
-from typing import List, Optional
+from typing import List, Optional, Union
 
 import re
 import io
 
-from common import ClausObject, ClausDatum, parse, write
-
-
-def main(filename: str):
-    with open(filename) as handle:
-        data = handle.read()
-
-    empires = parse_user_empires(data)
-
-    for name, empire in empires:
-        if not isinstance(empire, list):
-            raise Exception
-
-        if not is_valid_empire(empire):
-            continue
-
-        store(empire)
-        print(f"Imported {name}")
+from clauswitz.parser import ClausObject, ClausDatum, parse, write
 
 
 def parse_user_empires(data: str) -> ClausObject:
@@ -44,7 +28,7 @@ def parse_user_empires(data: str) -> ClausObject:
     return parse(io.StringIO(data))
 
 
-def store(empire: ClausObject, folder: str = "pending"):
+def store(empire: ClausObject, folder: str = "pending") -> None:
     name = get_value(empire, "key")
     filename = f"{folder}/{name}.txt"
 
@@ -54,7 +38,7 @@ def store(empire: ClausObject, folder: str = "pending"):
         handle.write("}\n")
 
 
-def is_valid_empire(data: ClausObject):
+def is_valid_empire(data: ClausObject) -> bool:
     if not has_value(data, "key"):
         return False
 
@@ -101,9 +85,13 @@ def get_value(data: ClausObject, key: str) -> Optional[ClausDatum]:
     return candidates[0]
 
 
-def add_value(data: ClausObject, key: str, value: str):
+def add_value(data: ClausObject, key: str, value: Union[bool, str]) -> None:
     data.append((key, value))
 
 
-if __name__ == "__main__":
-    main("user_empire_designs.txt")
+def is_value(value: ClausDatum, key: str) -> bool:
+    return isinstance(value, tuple) and value[0] == key
+
+
+def remove_values(data: ClausObject, key: str) -> None:
+    data[:] = filter(lambda x: not is_value(x, key), data)

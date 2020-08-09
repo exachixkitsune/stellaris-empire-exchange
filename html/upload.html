@@ -1,67 +1,72 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 	<head>
-		<meta charset="utf-8"/>
-		<title>Upload Your Empires</title>
-		<link rel="stylesheet" media="all" href="https://static.harcourtprogramming.co.uk/shared/2018.css" />
+		<meta charset="utf-8" />
+		<title>Stellaris Empire Exchange</title>
+		<!--include html/meta.html-->
 	</head>
 	<body>
-		<h1>Stellaris Empire Exchange</h1>
+		<!--include html/header.html-->
+		<section>
+			<h2>Upload Your Empires</h2>
 
-		<h2>Upload Your Empires</h2>
-		<form action="do-upload" method="post" enctype="multipart/form-data">
-			<label for=username">Username:</label>
-			<input type="text" name="username" id="username"/>
-			<p>
-				<label for="upload">
-					Your <code>user_empire_designs.txt</code>
-				</label>
-				<input type="file" name="file" id="upload"/>
-			</p>
+			<img
+				src="/event-image.jpg"
+				width="560"
+				height="187"
+				alt="Tribe crossing the plains"
+			/>
 
-			<ul id="list">
-				<p>You can find your user_empire_designs.txt file in [todo].</p>
-			</ul>
+			<form action="do-upload" method="post" enctype="multipart/form-data">
+				<main>
+					<p class="highlight">
+						Uploads for the game beginning July 10th have closed!
+					</p>
+					<p>
+						You are welcome to still upload your empire to the community, but
+						they will not appear in the game.
+					</p>
 
-			<p>
-				<input id="submit" type="submit" disabled value="Upload"/>
-			</p>
-		</form>
-		<p>Uploads works, but can not currently be used for anything</p>
+					<p>Welcome <span id="username">???</span>!</p>
 
-		<hr />
-		<h2>Generate An Empire List</h2>
+					<p>
+						Please insert your
+						<code>user_empire_designs.txt</code>
+						for upload.
+					</p>
 
-		<p>
-			Here you can generate and download an random
-			<code>user_empire_designs.txt</code> to put into your Stellaris
-			folder, and play with other peoples' empires.
-		</p>
-		<p>(Note: support to generate a real mod is still in the works)</p>
+					<label for="upload">&gt; </label>
+					<input type="file" name="file" id="upload" />
 
-		<form method="get" action="/generate">
-			<p>
-				<label for="empire_count">Number of Empires to include</label>
-				<input id="empire_count" name="empire_count" type="number" min="4" max="80"/>
-			</p>
-			<p>
-				<input type="checkbox" name="include_unmoderated" id="include_unmoderated" />
-				<label for="include_unmoderated">Included Unmoderated Empires</label>
-			</p>
-			<p>
-				<input type="submit" value="Download" />
-			</p>
-		</form>
-
-		<hr />
-		<h2>Uploaded Empires</h2>
-
-		<h3>Approved Empires</h3>
-		<ul id="approved"></ul>
-
-		<h3>Pending Empires</h3>
-		<ul id="pending"></ul>
-
-		<script type="module" src="upload.js" defer></script>
+					<ul id="list">
+						<li>
+							You can find your user_empire_designs.txt file in the following
+							locations:
+						</li>
+						<li>
+							<code>%UserProfile%\Documents\Paradox Interactive\Stellaris</code>
+							[Windows]
+						</li>
+						<li>
+							<code>$HOME/Documents/Paradox Interactive/Stellaris</code> [Mac]
+						</li>
+						<li>
+							<code>$HOME/.local/share/Paradox Interactive/Stellaris</code>
+							[Linux, non-steam]
+						</li>
+						<li>
+							<code>
+								$HOME/.steam/steam/userdata/[your-steam-id]/281990/remote
+							</code>
+							[Linux/Steam]
+						</li>
+					</ul>
+				</main>
+				<button id="submit" type="submit" disabled>
+					Upload
+				</button>
+			</form>
+		</section>
+		<script type="module" src="/sources.js" defer></script>
 	</body>
 </html>

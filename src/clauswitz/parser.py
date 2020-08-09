@@ -1,19 +1,23 @@
 #!/usr/bin/python3
+# -*- coding: utf-8 -*-
 # vim: nospell ts=4 expandtab
 
 from __future__ import annotations
 
 from typing import Any, IO, List, Tuple, Union
 
-ClausDatum = Union[str, Tuple[str, Any]]
+ClausDatum = Union[str, bool, Tuple[str, Any]]
 ClausObject = List[ClausDatum]
 
 
-def parse(handle: IO) -> ClausObject:
+def parse(handle: Union[IO[bytes], IO[str]]) -> ClausObject:
     output: ClausObject = []
 
     while True:
         line = handle.readline()
+
+        if isinstance(line, bytes):
+            line = line.decode("utf-8")
 
         if line == "":
             break
@@ -29,23 +33,22 @@ def parse(handle: IO) -> ClausObject:
             continue
 
         key, value = line.split("=", 1)
+        n_value: Union[ClausDatum, ClausObject]
 
         if value == "{":
-            value = parse(handle)
-        elif value == "yes":
-            value = True
-        elif value == "no":
-            value = False
+            n_value = parse(handle)
+        elif value in ["yes", "no"]:
+            n_value = value == "yes"
         else:
-            value = value.strip('"')
+            n_value = value.strip('"')
 
         key = key.strip('"')
-        output.append((key, value,))
+        output.append((key, n_value,))
 
     return output
 
 
-def write(data: ClausObject, handle: IO, depth: int = 0):
+def write(data: ClausObject, handle: IO[str], depth: int = 0) -> None:
     for item in data:
         handle.write("\t" * depth)
 
@@ -59,21 +62,26 @@ def write(data: ClausObject, handle: IO, depth: int = 0):
         handle.write(f'"{key}"' if " " in key else key)
         handle.write("=")
 
-        if isinstance(value, List):
-            handle.write("{\n")
-            write(value, handle, depth + 1)
-            handle.write("\t" * depth)
-            handle.write("}\n")
+        if isinstance(value, list):
+            if value:
+                handle.write("{\n")
+                write(value, handle, depth + 1)
+                handle.write("\t" * depth)
+                handle.write("}\n")
+            else:
+                handle.write("{}\n")
 
         else:
             write_literal(value, handle)
             handle.write("\n")
 
 
-def write_literal(value: Union[bool, str, float, int], handle: IO):
+def write_literal(value: Union[bool, str, float, int], handle: IO[str]) -> None:
     if isinstance(value, bool):
         handle.write("yes" if value else "no")
-    elif isinstance(value, int) or isinstance(value, float):
+    elif isinstance(value, (int, float)):
+        handle.write(str(value))
+    elif value in ["male", "female", "always"]:
         handle.write(value)
     else:
         handle.write(f'"{value}"')
